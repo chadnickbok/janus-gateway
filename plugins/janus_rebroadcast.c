@@ -2,7 +2,7 @@
  * \author Lorenzo Miniero <lorenzo@meetecho.com>
  * \author Nick Chadwick <chadnickbok@gmail.com>
  * \copyright GNU General Public License v3
- * \brief  Janus Record&Play plugin
+ * \brief  Janus Rebroadcast plugin
  * \details  This is a simple application that implements a single feature:
  * it allows you to publish a stream with WebRTC and re-broadcast this
  * stream over RTMP.
@@ -47,14 +47,14 @@
  *
  * A successful management of this request will result in a \c broadcasting
  * event which will include the JSEP
- * answer to complete the setup of the associated PeerConnection to record:
+ * answer to complete the setup of the associated PeerConnection to publish:
  *
 \verbatim
 {
 	"rebroadcast" : "event",
 	"result": {
 		"status" : "broadcasting",
-		"rtmpurl": "rtmp://servername:1935/streamkey"
+		"id":  <unique numeric ID>
 	}
 }
 \endverbatim
@@ -108,7 +108,6 @@
 #include "../apierror.h"
 #include "../config.h"
 #include "../mutex.h"
-#include "../record.h"
 #include "../rtp.h"
 #include "../rtcp.h"
 #include "../utils.h"
@@ -204,11 +203,6 @@ typedef struct janus_rebroadcast_message {
 static GAsyncQueue *messages = NULL;
 static janus_rebroadcast_message exit_message;
 
-typedef struct janus_rebroadcast_rtp_header_extension {
-	uint16_t type;
-	uint16_t length;
-} janus_recordplay_rtp_header_extension;
-
 typedef struct janus_rebroadcast_broadcast {
 	guint64 id;			/* Rebroadcast unique ID */
 	char *rtmpurl;			/* RTMP broadcast url */
@@ -241,7 +235,7 @@ static janus_mutex sessions_mutex;
 /* Helper to send RTCP feedback back to broadcasters, if needed */
 void janus_rebroadcast_send_rtcp_feedback(janus_plugin_session *handle, int video, char *buf, int len);
 
-static void janus_recordplay_message_free(janus_recordplay_message *msg)
+static void janus_rebroadcast_message_free(janus_rebroadcast_message *msg)
 {
 	if (!msg || (msg == &exit_message))
 	{
@@ -270,8 +264,6 @@ static void janus_recordplay_message_free(janus_recordplay_message *msg)
 #define JANUS_REBROADCAST_ERROR_INVALID_REQUEST	  413
 #define JANUS_REBROADCAST_ERROR_INVALID_ELEMENT	  414
 #define JANUS_REBROADCAST_ERROR_MISSING_ELEMENT	  415
-#define JANUS_REBROADCAST_ERROR_NOT_FOUND			    416
-#define JANUS_REBROADCAST_ERROR_INVALID_RECORDING	417
 #define JANUS_REBROADCAST_ERROR_INVALID_STATE	418
 #define JANUS_REBROADCAST_ERROR_UNKNOWN_ERROR	499
 
@@ -687,7 +679,7 @@ void janus_rebroadcast_setup_media(janus_plugin_session *handle) {
 		return;
 	}
 
-	janus_recordplay_session *session = (janus_recordplay_session *)handle->plugin_handle;
+	janus_rebroadcast_session *session = (janus_rebroadcast_session *)handle->plugin_handle;
 	if (!session)
 	{
 		JANUS_LOG(LOG_ERR, "No session associated with this handle...\n");
@@ -805,7 +797,7 @@ void janus_rebroadcast_slow_link(janus_plugin_session *handle, int uplink, int v
 		return;
 	}
 
-	janus_recordplay_session *session = (janus_recordplay_session *)handle->plugin_handle;
+	janus_rebroadcast_session *session = (janus_rebroadcast_session *)handle->plugin_handle;
 	if (!session || session->destroyed)
 	{
 		return;
@@ -959,8 +951,9 @@ static void *janus_rebroadcast_handler(void *data)
 
 			JANUS_VALIDATE_JSON_OBJECT(root, broadcast_parameters,
 				error_code, error_cause, TRUE,
-				JANUS_RECORDPLAY_ERROR_MISSING_ELEMENT, JANUS_RECORDPLAY_ERROR_INVALID_ELEMENT);
-			if (error_code != 0) {
+				JANUS_REBROADCAST_ERROR_MISSING_ELEMENT, JANUS_REBROADCAST_ERROR_INVALID_ELEMENT);
+			if (error_code != 0)
+			{
 				goto error;
 			}
 
@@ -968,9 +961,11 @@ static void *janus_rebroadcast_handler(void *data)
 			const char *rtmpurl_text = json_string_value(name);
 
 			guint64 id = 0;
-			while (id == 0) {
+			while (id == 0)
+			{
 				id = janus_random_uint64();
-				if (g_hash_table_lookup(rebroadcasts, &id) != NULL) {
+				if (g_hash_table_lookup(rebroadcasts, &id) != NULL)
+				{
 					/* Room ID already taken, try another one */
 					id = 0;
 				}
@@ -1012,7 +1007,7 @@ static void *janus_rebroadcast_handler(void *data)
 			{
 				g_snprintf(audio_mline, 256, sdp_a_template,
 					opus_pt,						/* Opus payload type */
-					"recvonly",						/* Recording is recvonly */
+					"recvonly",						/* Broadcasting is recvonly */
 					opus_pt); 						/* Opus payload type */
 			}
 			else
@@ -1024,7 +1019,7 @@ static void *janus_rebroadcast_handler(void *data)
 			{
 				g_snprintf(video_mline, 512, sdp_v_template,
 					vp8_pt,							/* VP8 payload type */
-					"recvonly",						/* Recording is recvonly */
+					"recvonly",						/* Broadcasting is recvonly */
 					vp8_pt, 						/* VP8 payload type */
 					vp8_pt, 						/* VP8 payload type */
 					vp8_pt, 						/* VP8 payload type */
@@ -1039,7 +1034,7 @@ static void *janus_rebroadcast_handler(void *data)
 			g_snprintf(sdptemp, 1024, sdp_template,
 				janus_get_real_time(),			/* We need current time here */
 				janus_get_real_time(),			/* We need current time here */
-				"broadcast",		            /* Playout session */
+				"broadcast",		            /* XXX: What is this? */
 				audio_mline,					/* Audio m-line, if any */
 				video_mline);					/* Video m-line, if any */
 			sdp = g_strdup(sdptemp);
