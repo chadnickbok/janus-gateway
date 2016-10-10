@@ -1,0 +1,4 @@
+; rtmpconfig = not sure what to do with this yet
+
+[general]
+rtmpconfig = @somertmpconfig@

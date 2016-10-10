@@ -249,6 +249,18 @@ EXTRA_DIST += \
 CLEANFILES += conf/janus.plugin.recordplay.cfg.sample
 endif
 
+if ENABLE_PLUGIN_REBROADCAST
+plugin_LTLIBRARIES += plugins/libjanus_rebroadcast.la
+plugins_libjanus_rebroadcast_la_SOURCES = plugins/janus_rebroadcast.c
+plugins_libjanus_rebroadcast_la_CFLAGS = $(plugins_cflags)
+plugins_libjanus_rebroadcast_la_LDFLAGS = $(plugins_ldflags)
+plugins_libjanus_rebroadcast_la_LIBADD = $(plugins_libadd)
+conf_DATA += conf/janus.plugin.rebroadcast.cfg.sample
+EXTRA_DIST += \
+	conf/janus.plugin.rebroadcast.cfg.sample.in
+CLEANFILES += conf/janus.plugin.rebroadcast.cfg.sample
+endif
+
 if ENABLE_PLUGIN_SIP
 plugin_LTLIBRARIES += plugins/libjanus_sip.la
 plugins_libjanus_sip_la_SOURCES = plugins/janus_sip.c

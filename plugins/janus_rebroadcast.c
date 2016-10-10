@@ -207,6 +207,7 @@ typedef struct janus_rebroadcast_broadcast {
 	guint64 id;			/* Rebroadcast unique ID */
 	char *rtmpurl;			/* RTMP broadcast url */
 	gboolean completed;	/* Whether this broadcast was completed or still going on */
+	gint64 destroyed;	/* Lazy timestamp to mark broadcasts as destroyed */
 	janus_mutex mutex;	/* Mutex for this broadcast */
 } janus_rebroadcast_broadcast;
 static GHashTable *broadcasts = NULL;
@@ -258,6 +259,29 @@ static void janus_rebroadcast_message_free(janus_rebroadcast_message *msg)
 	g_free(msg);
 }
 
+/* SDP answer templates */
+#define sdp_template \
+		"v=0\r\n" \
+		"o=- %"SCNu64" %"SCNu64" IN IP4 127.0.0.1\r\n"	/* We need current time here */ \
+		"s=%s\r\n"							/* Recording playout id */ \
+		"t=0 0\r\n" \
+		"%s%s"								/* Audio and/or video m-lines */
+#define sdp_a_template \
+		"m=audio 1 RTP/SAVPF %d\r\n"		/* Opus payload type */ \
+		"c=IN IP4 1.1.1.1\r\n" \
+		"a=%s\r\n"							/* Media direction */ \
+		"a=rtpmap:%d opus/48000/2\r\n"		/* Opus payload type */
+#define sdp_v_template \
+		"m=video 1 RTP/SAVPF %d\r\n"		/* VP8 payload type */ \
+		"c=IN IP4 1.1.1.1\r\n" \
+		"a=%s\r\n"							/* Media direction */ \
+		"a=rtpmap:%d VP8/90000\r\n"			/* VP8 payload type */ \
+		"a=rtcp-fb:%d ccm fir\r\n"			/* VP8 payload type */ \
+		"a=rtcp-fb:%d nack\r\n"				/* VP8 payload type */ \
+		"a=rtcp-fb:%d nack pli\r\n"			/* VP8 payload type */ \
+		"a=rtcp-fb:%d goog-remb\r\n"		/* VP8 payload type */
+
+
 /* Error codes */
 #define JANUS_REBROADCAST_ERROR_NO_MESSAGE			  411
 #define JANUS_REBROADCAST_ERROR_INVALID_JSON		  412
@@ -285,7 +309,7 @@ void *janus_rebroadcast_watchdog(void *data) {
 			JANUS_LOG(LOG_HUGE, "Checking %d old Rebroadcast sessions...\n", g_list_length(old_sessions));
 			while (sl)
 			{
-				janus_rebroadcast_broadcast *session = (janus_rebroadcast_broadcast *)sl->data;
+				janus_rebroadcast_session *session = (janus_rebroadcast_session *)sl->data;
 				if (!session)
 				{
 					sl = sl->next;
@@ -348,8 +372,8 @@ int janus_rebroadcast_init(janus_callbacks *callback, const char *config_path)
 		config = NULL;
 	}
 
-	rebroadcasts = g_hash_table_new_full(g_int64_hash, g_int64_equal, (GDestroyNotify)g_free, NULL);
-	janus_mutex_init(&rebroadcasts_mutex);
+	broadcasts = g_hash_table_new_full(g_int64_hash, g_int64_equal, (GDestroyNotify)g_free, NULL);
+	janus_mutex_init(&broadcasts_mutex);
 
 	sessions = g_hash_table_new(NULL, NULL);
 	janus_mutex_init(&sessions_mutex);
@@ -518,7 +542,7 @@ json_t *janus_rebroadcast_query_session(janus_plugin_session *handle)
 
 	/* In the echo test, every session is the same: we just provide some configure info */
 	json_t *info = json_object();
-	json_object_set_new(info, "type", json_string("rebroadcast");
+	json_object_set_new(info, "type", json_string("rebroadcast"));
 	json_object_set_new(info, "broadcast_id", json_integer(session->broadcast->id));
 	json_object_set_new(info, "broadcast_rtmpurl", json_string(session->broadcast->rtmpurl));
 	json_object_set_new(info, "destroyed", json_integer(session->destroyed));
@@ -958,13 +982,13 @@ static void *janus_rebroadcast_handler(void *data)
 			}
 
 			json_t *rtmpurl = json_object_get(root, "rtmpurl");
-			const char *rtmpurl_text = json_string_value(name);
+			const char *rtmpurl_text = json_string_value(rtmpurl);
 
 			guint64 id = 0;
 			while (id == 0)
 			{
 				id = janus_random_uint64();
-				if (g_hash_table_lookup(rebroadcasts, &id) != NULL)
+				if (g_hash_table_lookup(broadcasts, &id) != NULL)
 				{
 					/* Room ID already taken, try another one */
 					id = 0;
