@@ -228,7 +228,7 @@ function startBroadcasting() {
 	}
 	// Start broadcasting
 	broadcasting = true;
-	bootbox.prompt("Insert RTMP rebroadcast URI (e.g., rtmp://servername:1935/streamkey)", function(result) {
+	bootbox.prompt("Insert RTMP rebroadcast URL (e.g., rtmp://servername:1935/streamkey)", function(result) {
 		if (result === null || result === undefined) {
 			broadcasting = false;
 			return;
@@ -252,7 +252,7 @@ function startBroadcasting() {
 				success: function(jsep) {
 					Janus.debug("Got SDP!");
 					Janus.debug(jsep);
-					var body = { "request": "rebroadcast", "rtmpurl": rtmpurl };
+					var body = { "request": "broadcast", "rtmpurl": rtmpurl };
 					rebroadcast.send({"message": body, "jsep": jsep});
 				},
 				error: function(error) {
