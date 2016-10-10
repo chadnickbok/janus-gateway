@@ -93,6 +93,8 @@ $(document).ready(function() {
 											$(this).attr('disabled', true);
 											janus.destroy();
 										});
+									// Initialize Broadcast button
+									$('#broadcast').removeAttr('disabled').click(startBroadcasting);
 								},
 								error: function(error) {
 									Janus.error("  -- Error attaching plugin...", error);
@@ -170,9 +172,6 @@ $(document).ready(function() {
 									}
 								},
 								onlocalstream: function(stream) {
-									if (broadcasting === true) {
-										return;
-									}
 									Janus.debug(" ::: Got a local stream :::");
 									Janus.debug(JSON.stringify(stream));
 									$('#videotitle').html("Broadcasting...");
