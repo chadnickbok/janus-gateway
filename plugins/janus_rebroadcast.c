@@ -770,6 +770,7 @@ void janus_rebroadcast_send_rtcp_feedback(janus_plugin_session *handle, int vide
 	}
 }
 
+static int frame_count = 0;
 void janus_rebroadcast_incoming_rtp(janus_plugin_session *handle, int video, char *buf, int len)
 {
 	if (handle == NULL || handle->stopped || g_atomic_int_get(&stopping) || !g_atomic_int_get(&initialized)) {
@@ -792,6 +793,11 @@ void janus_rebroadcast_incoming_rtp(janus_plugin_session *handle, int video, cha
 
 		// TODO: rtmp publish frame
 		// janus_rebroadcast_save_frame(video ? session->vrc : session->arc, buf, len);
+		if (frame_count++ >= 1000)
+		{
+			frame_count = 0;
+			JANUS_LOG(LOG_INFO, "Current rtp: %d %d\n", video, len);
+		}
 
 		janus_rebroadcast_send_rtcp_feedback(handle, video, buf, len);
 	}
